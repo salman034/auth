@@ -1,0 +1,75 @@
+Key Notes
+1. JWT validation happens in JwtAuthenticationFilter before reaching the controller.
+2. CustomUserDetails is returned by UserDetailsService for authentication.
+3. JWTService handles all JWT parsing, extraction, and validation.
+4. The controller/service always uses SecurityContextHolder to get the current authenticated user.
+5. If token is invalid → response is 401 Unauthorized from JwtAuthenticationFilter.
+
+[HTTP Request from Client]
+            |
+            v
++-----------------------------+
+| DispatcherServlet           |
++-----------------------------+
+            |
+            v
++-----------------------------+   (1️⃣ SecurityConfig)
+| SecurityFilterChain         |
+| - csrf disabled             |
+| - session stateless         |
+| - /v1/auth/** permitAll     |
+| - addFilterBefore(jwtAuth)  |
++-----------------------------+
+            |
+            v
++----------------------------------------------------------------------------+   (3️⃣ JwtAuthenticationFilter)
+| doFilterInternal(HttpServletRequest, HttpServletResponse, FilterChain)     |
+| - Extract Authorization header                                             |
+| - If missing or invalid → continue                                         |
+| - Extract JWT token                                                        |
+| - Call jwtService.extractUserName(token) → returns email                   |
+| - Check SecurityContextHolder for authentication                           |
+| - If not authenticated:                                                    |
+|      - userDetailsService.loadUserByUsername(email) → CustomUserDetails    |
+|      - jwtService.isValidToken(token, userDetails) → boolean               |
+|      - If valid → set Authentication in SecurityContextHolder              |
+| - filterChain.doFilter(request, response)                                  |
++----------------------------------------------------------------------------+
+            |
+            v
++------------------------------+   (4️⃣ ApplicationConfiguration)
+| UserDetailsService           |
+| - loadUserByUsername(email)  |
+|   → Users from DB            |
+| - Wrap into CustomUserDetails|
++------------------------------+
+            |
+            v
++----------------------------------+   (5️⃣ JWTService)
+| extractUserName(token)           |
+| - Decode JWT claims              |
+| - return "sub" → email           |
+| isValidToken(token, userDetails) |
+| - check username matches         |
+| - check token not expired        |
++----------------------------------+
+            |
+            v
++------------------------------+   (5️⃣ CustomUserDetails)
+| getUsername() → email        |
+| getPassword() → hashed pwd   |
+| isEnabled() → boolean        |
+| getAuthorities() → roles     |
++------------------------------+
+            |
+            v
++---------------------------------------------------------------------------------+
+| Controller / Service                                                            |
+| - Can access SecurityContext:                                                   |
+|   Authentication auth = SecurityContextHolder.getContext().getAuthentication(); |
+|   String email = auth.getName();                                                |
+| - Use email to fetch user or handle request                                     |
++---------------------------------------------------------------------------------+
+            |
+            v
+[Response to Client]
